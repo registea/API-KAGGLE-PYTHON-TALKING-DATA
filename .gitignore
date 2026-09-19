@@ -1,0 +1,52 @@
+# Local Python and Conda environments
+.venv/
+venv/
+env/
+ENV/
+.conda/
+.python-version
+
+# Python bytecode and packaging artefacts
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+
+# Test, lint, type-check and coverage artefacts
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Notebook, editor and operating-system metadata
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local logs and secrets
+*.log
+.env
+.env.*
+!.env.example
+kaggle.json
+.access_token
+
+# Generated Kaggle packages, downloaded outputs and local datasets
+outputs/
+data/**
+!data/raw/
+!data/raw/.gitkeep
+!data/processed/
+!data/processed/.gitkeep
