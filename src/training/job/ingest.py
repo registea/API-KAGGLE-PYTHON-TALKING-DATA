@@ -1,5 +1,5 @@
 """
-Join competition transaction and identity tables into a flat training file.
+Ingest and sample.
 """
 
 from pathlib import Path
@@ -11,9 +11,7 @@ import duckdb
 from training.job.utils.logging import setup_logger
 
 
-def run(
-    input_dir: Path, output_dir: Path, config: dict
-) -> Path:
+def run(input_dir: Path, output_dir: Path, config: dict) -> Path:
     """
     Ingest data into the pipeline and save them for future use.
 
