@@ -27,7 +27,7 @@ def add_pipeline_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--nodes",
         nargs="+",
-        choices=["data_process", "fit", "score"],
+        choices=["ingest", "data_process", "fit", "score"],
         help=(
             "Nodes to execute; defaults to training YAML. "
             "Dependencies always run first."

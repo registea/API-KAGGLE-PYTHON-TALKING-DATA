@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> None:
     if (
         not isinstance(nodes, list)
         or not nodes
-        or any(node not in {"data_process", "fit", "score"} for node in nodes)
+        or any(node not in {"ingest", "data_process", "fit", "score"} for node in nodes)
     ):
         raise ValueError(
             "Select at least one supported node: data_process, fit or score."
@@ -113,38 +113,50 @@ def main(argv: list[str] | None = None) -> None:
     max_rows = max_rows or None
 
     # ------------------------------------------------------------------------------------------------------------------
-    # Data processing node
+    # Ingest node
 
-    if "data_process" in nodes:
+    if "ingest" in nodes:
         # Only load when required
-        from training.job.data_process import run as process_data
+        from training.job.ingest import run as ingest
 
-        logger.info("Starting node: data_process")
-        processed_data = process_data(
-            input_dir, output_dir, config, max_rows=max_rows
+        logger.info("Starting node: ingestion")
+        ingested_data = ingest(
+            input_dir, output_dir, config
         )
 
-    # ------------------------------------------------------------------------------------------------------------------
-    # Model fitting node
+    # # ------------------------------------------------------------------------------------------------------------------
+    # # Data processing node
 
-    if "fit" in nodes:
-        # Only load when required
-        from training.job.fit import run as fit_model
+    # if "data_process" in nodes:
+    #     # Only load when required
+    #     from training.job.data_process import run as process_data
 
-        logger.info("Starting node: fit")
-        model_path = fit_model(processed_data, output_dir, config)
+    #     logger.info("Starting node: data_process")
+    #     processed_data = process_data(
+    #         input_dir, output_dir, config, max_rows=max_rows
+    #     )
 
-    # ------------------------------------------------------------------------------------------------------------------
-    # Test-set scoring node
+    # # ------------------------------------------------------------------------------------------------------------------
+    # # Model fitting node
 
-    if "score" in nodes:
-        # Only load when required
-        from training.job.score import run as score_model
+    # if "fit" in nodes:
+    #     # Only load when required
+    #     from training.job.fit import run as fit_model
 
-        logger.info("Starting node: score")
-        score_model(
-            model_path, input_dir, output_dir, config, run_id=options.run_id
-        )
+    #     logger.info("Starting node: fit")
+    #     model_path = fit_model(processed_data, output_dir, config)
+
+    # # ------------------------------------------------------------------------------------------------------------------
+    # # Test-set scoring node
+
+    # if "score" in nodes:
+    #     # Only load when required
+    #     from training.job.score import run as score_model
+
+    #     logger.info("Starting node: score")
+    #     score_model(
+    #         model_path, input_dir, output_dir, config, run_id=options.run_id
+    #     )
 
     logger.info("Selected pipeline nodes completed.")
 

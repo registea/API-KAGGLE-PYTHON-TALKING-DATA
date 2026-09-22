@@ -226,7 +226,7 @@ def main(argv: list[str] | None = None) -> None:
                     "job/cfg/training.yaml."
                 )
             if options.nodes is None:
-                options.nodes = ["data_process", "fit", "score"]
+                options.nodes = ["ingest", "data_process", "fit", "score"]
             if "score" not in options.nodes:
                 raise ValueError(
                     "--submit-predictions requires the score node."
