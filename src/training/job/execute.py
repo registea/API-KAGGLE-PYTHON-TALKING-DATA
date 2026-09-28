@@ -65,7 +65,10 @@ def main(argv: list[str] | None = None) -> None:
     if (
         not isinstance(nodes, list)
         or not nodes
-        or any(node not in {"ingest", "data_process", "fit", "score"} for node in nodes)
+        or any(
+            node not in {"ingest", "data_process", "fit", "score"}
+            for node in nodes
+        )
     ):
         raise ValueError(
             "Select at least one supported node: data_process, fit or score."
@@ -75,19 +78,19 @@ def main(argv: list[str] | None = None) -> None:
     if len(nodes) != len(set(nodes)):
         raise ValueError("Each pipeline node can only be selected once.")
 
-    # Ensure only processing or using previously processed data - Both are not permitted
-    if options.processed_data is not None and "data_process" in nodes:
+    # Ensure only processing or using previously ingested data - Both are not permitted
+    if options.ingested_data is not None and "ingest" in nodes:
         raise ValueError(
-            "--processed-data is for fit-only runs; omit it when "
+            "--ingested-data is for data_process runs; omit it when "
             "running data_process."
         )
 
-    # Ensure there is a clear direction for where to fit models
-    if options.model_path is not None and "fit" in nodes:
-        raise ValueError(
-            "--model-path is for score-only runs; omit it when "
-            "fitting a new model."
-        )
+    # # Ensure there is a clear direction for where to fit models
+    # if options.model_path is not None and "fit" in nodes:
+    #     raise ValueError(
+    #         "--model-path is for score-only runs; omit it when "
+    #         "fitting a new model."
+    #     )
 
     # ------------------------------------------------------------------------------------------------------------------
     # Extract parameters
@@ -99,18 +102,9 @@ def main(argv: list[str] | None = None) -> None:
         if Path("/kaggle/working").is_dir()
         else Path("outputs")
     )
-    processed_data = options.processed_data or output_dir / "training.csv"
-    model_path = options.model_path or output_dir / "model.joblib"
-
-    # Determine where to get max rows from, config or script arg
-    max_rows = (
-        options.max_rows
-        if options.max_rows is not None
-        else config.get("max_rows")
-    )
-    if max_rows is not None and max_rows < 0:
-        raise ValueError("--max-rows must be zero or positive.")
-    max_rows = max_rows or None
+    ingested_data = options.ingested_data or output_dir / "train.csv"
+    # processed_data = options.processed_data or output_dir / "training.csv"
+    # model_path = options.model_path or output_dir / "model.joblib"
 
     # ------------------------------------------------------------------------------------------------------------------
     # Ingest node
@@ -120,31 +114,28 @@ def main(argv: list[str] | None = None) -> None:
         from training.job.ingest import run as ingest
 
         logger.info("Starting node: ingestion")
-        ingested_data = ingest(
-            input_dir, output_dir, config
-        )
+        ingested_data = ingest(input_dir, output_dir, config)
 
-    # # ------------------------------------------------------------------------------------------------------------------
-    # # Data processing node
+    # ------------------------------------------------------------------------------------------------------------------
+    # Data processing node
 
-    # if "data_process" in nodes:
-    #     # Only load when required
-    #     from training.job.data_process import run as process_data
+    if "data_process" in nodes:
+        # Only load when required
+        from training.job.data_process import run as process_data
 
-    #     logger.info("Starting node: data_process")
-    #     processed_data = process_data(
-    #         input_dir, output_dir, config, max_rows=max_rows
-    #     )
+        logger.info("Starting node: data_process")
+        processed_data = process_data(ingested_data, output_dir, config)
 
-    # # ------------------------------------------------------------------------------------------------------------------
-    # # Model fitting node
+    # ------------------------------------------------------------------------------------------------------------------
+    # Model fitting node
 
-    # if "fit" in nodes:
-    #     # Only load when required
-    #     from training.job.fit import run as fit_model
+    if "fit" in nodes:
+        # Only load when required
+        from training.job.fit import run as fit_model
 
-    #     logger.info("Starting node: fit")
-    #     model_path = fit_model(processed_data, output_dir, config)
+        logger.info("Starting node: fit")
+        model_path = fit_model(processed_data, output_dir, config)
+        model_path
 
     # # ------------------------------------------------------------------------------------------------------------------
     # # Test-set scoring node

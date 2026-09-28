@@ -46,9 +46,9 @@ def add_pipeline_arguments(parser: argparse.ArgumentParser) -> None:
         help="Stage outputs; defaults to Kaggle working/local outputs.",
     )
     parser.add_argument(
-        "--processed-data",
+        "--ingested-data",
         type=Path,
-        help="Existing training.csv for a fit-only run.",
+        help="Existing training.csv for downstream runs.",
     )
     parser.add_argument(
         "--model-path", type=Path, help="Saved model for a score-only run."
@@ -86,7 +86,7 @@ def pipeline_argv(options: argparse.Namespace) -> list[str]:
     for name in (
         "input_dir",
         "output_dir",
-        "processed_data",
+        "ingested_data",
         "max_rows",
         "model_path",
         "run_id",

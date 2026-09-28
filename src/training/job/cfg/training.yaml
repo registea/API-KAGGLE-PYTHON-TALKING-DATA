@@ -7,8 +7,17 @@ test_file: test.csv
 target_column: isFraud
 sample_submission_file: submission.csv
 
-# Rows to sample
-sample_rows: 10000
+# Save ingestion data
+publish_ingested_dataset: true
+ingested_dataset_handle: "ar89dsl/talkingdata-sample"
 
+# Save processed data
+publish_processed_dataset: true
+processed_split_train_handle: "ar89dsl/talkingdata-train"
+processed_split_val_handle: "ar89dsl/talkingdata-val"
+processed_split_test_handle: "ar89dsl/talkingdata-test"
+
+# Rows to sample
+sample_rows: 1000000
 random_seed: 89
 test_size: 0.2
