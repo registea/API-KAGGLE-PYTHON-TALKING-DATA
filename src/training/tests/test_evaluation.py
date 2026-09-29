@@ -23,6 +23,7 @@ class EvaluationTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["prevalence"], 0.5)
         self.assertAlmostEqual(metrics["roc_auc"], 0.75)
         self.assertAlmostEqual(metrics["average_precision"], 5 / 6)
+        self.assertAlmostEqual(metrics["pr_auc"], 19 / 24)
 
         top_metrics = metrics["top_fraction_metrics"][0]
         self.assertEqual(top_metrics["selected"], 1)

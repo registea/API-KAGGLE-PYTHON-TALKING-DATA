@@ -5,9 +5,11 @@ from typing import Any
 
 import numpy as np
 from sklearn.metrics import (
+    auc,
     average_precision_score,
     brier_score_loss,
     log_loss,
+    precision_recall_curve,
     roc_auc_score,
 )
 
@@ -49,6 +51,10 @@ def evaluate_binary_predictions(
 
     prevalence = float(labels.mean())
     positives = int(labels.sum())
+    precision_curve, recall_curve, _ = precision_recall_curve(
+        labels,
+        probabilities,
+    )
     ranked_indices = np.argsort(-probabilities, kind="stable")
     top_fraction_metrics = []
 
@@ -82,6 +88,7 @@ def evaluate_binary_predictions(
         "average_precision": float(
             average_precision_score(labels, probabilities)
         ),
+        "pr_auc": float(auc(recall_curve, precision_curve)),
         "log_loss": float(log_loss(labels, probabilities, labels=[0, 1])),
         "brier_score": float(brier_score_loss(labels, probabilities)),
         "top_fraction_metrics": top_fraction_metrics,

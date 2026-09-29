@@ -12,6 +12,82 @@ from training.job.utils.ml.evaluation import evaluate_binary_predictions
 from training.job.utils.ml.fit_models import CustomPredictor, EstimatorFit
 
 
+def average_cv_metrics(
+    fold_metrics: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Average binary evaluation metrics across outer CV folds."""
+
+    metric_names = (
+        "prevalence",
+        "roc_auc",
+        "average_precision",
+        "pr_auc",
+        "log_loss",
+        "brier_score",
+    )
+    average_metrics: dict[str, Any] = {
+        metric: float(np.mean([result[metric] for result in fold_metrics]))
+        for metric in metric_names
+    }
+
+    average_top_fraction_metrics: list[dict[str, float]] = []
+    for position, top_metrics in enumerate(
+        fold_metrics[0]["top_fraction_metrics"]
+    ):
+        average_top_fraction_metrics.append(
+            {
+                "fraction": top_metrics["fraction"],
+                "selected": float(
+                    np.mean(
+                        [
+                            result["top_fraction_metrics"][position]["selected"]
+                            for result in fold_metrics
+                        ]
+                    )
+                ),
+                "positives": float(
+                    np.mean(
+                        [
+                            result["top_fraction_metrics"][position][
+                                "positives"
+                            ]
+                            for result in fold_metrics
+                        ]
+                    )
+                ),
+                "precision": float(
+                    np.mean(
+                        [
+                            result["top_fraction_metrics"][position][
+                                "precision"
+                            ]
+                            for result in fold_metrics
+                        ]
+                    )
+                ),
+                "recall": float(
+                    np.mean(
+                        [
+                            result["top_fraction_metrics"][position]["recall"]
+                            for result in fold_metrics
+                        ]
+                    )
+                ),
+                "lift": float(
+                    np.mean(
+                        [
+                            result["top_fraction_metrics"][position]["lift"]
+                            for result in fold_metrics
+                        ]
+                    )
+                ),
+            }
+        )
+
+    average_metrics["top_fraction_metrics"] = average_top_fraction_metrics
+    return average_metrics
+
+
 def generate_calibration_predictions(
     classifier_name: str,
     hyperparameters: dict[str, Any],
@@ -87,7 +163,7 @@ def cross_validation(
     )
 
     # Retain fold results for comparison and downstream model selection
-    results = []
+    results: list[dict[str, Any]] = []
 
     # Split data over successive folds
     for fold, (train_index, test_index) in enumerate(
@@ -153,11 +229,13 @@ def cross_validation(
 
         logger.info(
             "Raw - CV fold %s: prevalence=%.4f%%, AUROC=%.4f, AP=%.4f, "
+            "PR AUC=%.4f, "
             "log-loss=%.6f, Brier=%.6f",
             fold,
             100 * raw_metrics["prevalence"],
             raw_metrics["roc_auc"],
             raw_metrics["average_precision"],
+            raw_metrics["pr_auc"],
             raw_metrics["log_loss"],
             raw_metrics["brier_score"],
         )
@@ -175,12 +253,14 @@ def cross_validation(
             )
 
         logger.info(
-            "Calibrated - CV fold %s: prevalence=%.4f%%, AUROC=%.4f, AP=%.4f, "
+            "Cal - CV fold %s: prevalence=%.4f%%, AUROC=%.4f, AP=%.4f, "
+            "PR AUC=%.4f, "
             "log-loss=%.6f, Brier=%.6f",
             fold,
             100 * calibrated_metrics["prevalence"],
             calibrated_metrics["roc_auc"],
             calibrated_metrics["average_precision"],
+            calibrated_metrics["pr_auc"],
             calibrated_metrics["log_loss"],
             calibrated_metrics["brier_score"],
         )
@@ -189,6 +269,49 @@ def cross_validation(
                 "CV fold %s top %.2f%%: precision=%.4f, recall=%.4f, "
                 "lift=%.1fx (%s/%s positives)",
                 fold,
+                100 * top_metrics["fraction"],
+                top_metrics["precision"],
+                top_metrics["recall"],
+                top_metrics["lift"],
+                top_metrics["positives"],
+                top_metrics["selected"],
+            )
+
+    # Average results equally across the outer folds
+    average_raw_metrics = average_cv_metrics(
+        [result["raw"] for result in results]
+    )
+    average_calibrated_metrics = average_cv_metrics(
+        [result["calibrated"] for result in results]
+    )
+    results.append(
+        {
+            "fold": "average",
+            "raw": average_raw_metrics,
+            "calibrated": average_calibrated_metrics,
+        }
+    )
+
+    for result_name, metrics in (
+        ("Raw", average_raw_metrics),
+        ("Cal", average_calibrated_metrics),
+    ):
+        logger.info(
+            "%s - CV average: prevalence=%.4f%%, AUROC=%.4f, AP=%.4f, "
+            "PR AUC=%.4f, log-loss=%.6f, Brier=%.6f",
+            result_name,
+            100 * metrics["prevalence"],
+            metrics["roc_auc"],
+            metrics["average_precision"],
+            metrics["pr_auc"],
+            metrics["log_loss"],
+            metrics["brier_score"],
+        )
+        for top_metrics in metrics["top_fraction_metrics"]:
+            logger.info(
+                "%s - CV average top %.2f%%: precision=%.4f, recall=%.4f, "
+                "lift=%.1fx (%.1f/%.1f positives)",
+                result_name,
                 100 * top_metrics["fraction"],
                 top_metrics["precision"],
                 top_metrics["recall"],
