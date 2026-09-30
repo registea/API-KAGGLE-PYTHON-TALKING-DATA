@@ -95,7 +95,7 @@ def generate_calibration_predictions(
     seed: int,
     features: list[str],
     X: pd.DataFrame,
-    y: np.ndarray,
+    y: pd.Series | np.ndarray,
     inner_splits: int,
     inner_test_size: int,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -103,16 +103,26 @@ def generate_calibration_predictions(
     Generate time-based OOF predictions for fitting the calibrator.
     """
 
+    # Use positional NumPy indexing consistently with DataFrame.iloc.
+    y_values = np.asarray(y).reshape(-1)
+    if len(X) != len(y_values):
+        raise ValueError(
+            "Calibration features and targets must have equal length."
+        )
+
+    # Create time based expanding splitter
     inner_splitter = TimeSeriesSplit(
         n_splits=inner_splits,
         test_size=inner_test_size,
         gap=0,
     )
 
+    # Holder
     calibration_probabilities = []
     calibration_targets = []
 
-    for train_index, validation_index in inner_splitter.split(X, y):
+    # Loop through splits and fit estimator
+    for train_index, validation_index in inner_splitter.split(X, y_values):
         estimator = EstimatorFit(
             classifier_name=classifier_name,
             hyperparameters=hyperparameters,
@@ -120,16 +130,15 @@ def generate_calibration_predictions(
             seed=seed,
             features=features,
         )
-
         estimator.fit(
             X=X.iloc[train_index],
-            y=y[train_index],
+            y=y_values[train_index],
         )
 
+        # Capture inference and store the OFF probs
         probabilities = estimator.predict_proba(X=X.iloc[validation_index])
-
         calibration_probabilities.append(probabilities)
-        calibration_targets.append(y[validation_index])
+        calibration_targets.append(y_values[validation_index])
 
     return (
         np.concatenate(calibration_probabilities),
