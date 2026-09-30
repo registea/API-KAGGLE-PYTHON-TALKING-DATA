@@ -3,15 +3,21 @@ Fit a binary classifier and evaluate.
 """
 
 import duckdb
+import pandas as pd
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Import Local Functionality
 
 from training.job.utils.logging import setup_logger
-from training.job.utils.ml.cross_validation import cross_validation
+from training.job.utils.ml.cross_validation import (
+    cross_validation,
+    generate_calibration_predictions,
+)
+from training.job.utils.ml.evaluation import evaluate_binary_predictions
+from training.job.utils.ml.fit_models import CustomPredictor
 
 
 def run(input_files: Dict[str, Path], output_dir: Path, config: dict) -> int:
@@ -43,23 +49,37 @@ def run(input_files: Dict[str, Path], output_dir: Path, config: dict) -> int:
             )
 
     df_train = duckdb.read_csv(str(input_files["train"]))
-    # df_val = duckdb.read_csv(str(input_files["val"]))
-    # df_test = duckdb.read_csv(str(input_files["test"]))
+    df_val = duckdb.read_csv(str(input_files["val"]))
+    df_test = duckdb.read_csv(str(input_files["test"]))
+    # df_full = pd.concat(
+    #     [df_train.df(), df_val.df(), df_test.df()],
+    #     axis=0,
+    #     ignore_index=True,
+    # )
+
+    classifier_name = "xgb"
+    target_col = "is_attributed"
+    features = ["channel"]  # ["app", "device", "os", "channel"] ["channel"]
+    seed = 42
+    inner_splits = 4
+    inner_test_size = 50000
+    hyperparameters: dict[str, Any] = {}
+    monotone_constraints: dict[str, Any] = {}
 
     # ------------------------------------------------------------------------------------------------------------------
     # Cross validation
 
     cross_validation(
-        classifier_name="xgb",
-        hyperparameters={},
-        monotone_constraints={},
-        target_col="is_attributed",
-        features=["channel"],
-        seed=42,
+        classifier_name=classifier_name,
+        hyperparameters=hyperparameters,
+        monotone_constraints=monotone_constraints,
+        target_col=target_col,
+        features=features,
+        seed=seed,
         df_data=df_train.df(),
         logger=logger,
-        inner_splits=4,
-        inner_test_size=50000,
+        inner_splits=inner_splits,
+        inner_test_size=inner_test_size,
     )
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -68,41 +88,117 @@ def run(input_files: Dict[str, Path], output_dir: Path, config: dict) -> int:
     # ------------------------------------------------------------------------------------------------------------------
     # Hyperparameter tuning
 
+    # ------------------------------------------------------------------------------------------------------------------
+    # Test set evaluation
+
+    # Combine train and validation data
+    df_combined_train = pd.concat(
+        [df_train.df(), df_val.df()],
+        axis=0,
+        ignore_index=True,
+    )
+    X_train = df_combined_train[features]
+    y_train = df_combined_train[[target_col]].to_numpy()
+
+    # Calculate OOF probabilities for calibration
+    calibration_probabilities, calibration_y = generate_calibration_predictions(
+        classifier_name=classifier_name,
+        hyperparameters=hyperparameters,
+        monotone_constraints=monotone_constraints,
+        seed=seed,
+        features=features,
+        X=X_train,
+        y=y_train,
+        inner_splits=inner_splits,
+        inner_test_size=inner_test_size,
+    )
+
+    # Create model which can be fit on the test set
+    eval_model = CustomPredictor(
+        seed=seed,
+        classifier_name=classifier_name,
+        hyperparameters=hyperparameters,
+        monotone_constraints=monotone_constraints,
+        features=features,
+    )
+    eval_model.fit(
+        X=X_train,
+        y=y_train,
+        calibration_probabilities=calibration_probabilities,
+        calibration_y=calibration_y,
+    )
+
+    # Generate inference
+    probabilities = eval_model.predict_proba(df_test.df()[features])
+
+    # Evaluate and log performance
+    eval_metrics = evaluate_binary_predictions(
+        y_true=df_test.df()[[target_col]],
+        y_probability=probabilities,
+    )
+    logger.info(
+        "Test Set: prevalence=%.4f%%, AUROC=%.4f, AP=%.4f, "
+        "PR AUC=%.4f, "
+        "log-loss=%.6f, Brier=%.6f",
+        100 * eval_metrics["prevalence"],
+        eval_metrics["roc_auc"],
+        eval_metrics["average_precision"],
+        eval_metrics["pr_auc"],
+        eval_metrics["log_loss"],
+        eval_metrics["brier_score"],
+    )
+
     # # ------------------------------------------------------------------------------------------------------------------
-    # # Refit on all available labelled rows after held-out evaluation, then save
+    # # Full build
 
-    # output_dir.mkdir(parents=True, exist_ok=True)
-    # model_path = output_dir / "model.joblib"
+    # # All labelled competition data
+    # X_full = df_full[features]
+    # y_full = df_full[target_col].to_numpy()
 
-    # # Keep holdout probabilities for metrics, then use all labelled rows for final scoring.
-    # model.fit(x, y)
-    # joblib.dump(model, model_path)
-
-    # # Record enough context to interpret the demonstration validation scores
-    # metrics = {
-    #     "feature": feature,
-    #     "target": target,
-    #     "train_rows": len(x_train),
-    #     "validation_rows": len(x_test),
-    #     "roc_auc": float(roc_auc_score(y_test, probabilities)),
-    #     "average_precision": float(
-    #         average_precision_score(y_test, probabilities)
-    #     ),
-    #     "random_seed": config["random_seed"],
-    #     "refit_rows": len(x),
-    #     "note": (
-    #         "One-feature demonstration with a random stratified split; "
-    #         "not a competition-ready model."
-    #     ),
-    # }
-    # (output_dir / "metrics.json").write_text(
-    #     json.dumps(metrics, indent=2) + "\n", encoding="utf-8"
+    # # Honest temporal OOF probabilities for calibration
+    # calibration_probabilities, calibration_y = (
+    #     generate_calibration_predictions(
+    #         X=X_full,
+    #         y=y_full,
+    #         classifier_name=classifier_name,
+    #         hyperparameters=hyperparameters,
+    #         monotone_constraints=monotone_constraints,
+    #         seed=seed,
+    #         features=features,
+    #         inner_splits=inner_splits,
+    #         inner_test_size=inner_test_size,
+    #     )
     # )
-    # logger.info(
-    #     "Fitted feature %s; ROC AUC %.4f; saved model to %s",
-    #     feature,
-    #     metrics["roc_auc"],
-    #     model_path,
+
+    # # Base model is fitted on all labelled rows;
+    # # calibrator is fitted on temporal OOF predictions
+    # final_model = CustomPredictor(
+    #     classifier_name=classifier_name,
+    #     hyperparameters=hyperparameters,
+    #     monotone_constraints=monotone_constraints,
+    #     seed=seed,
+    #     features=features,
     # )
+
+    # final_model.fit(
+    #     X=X_full,
+    #     y=y_full,
+    #     calibration_probabilities=calibration_probabilities,
+    #     calibration_y=calibration_y,
+    # )
+
+    # # Kaggle's unlabelled test.csv
+    # df_kaggle_test = pd.read_csv(test_path)
+
+    # submission = pd.DataFrame(
+    #     {
+    #         "click_id": df_kaggle_test["click_id"],
+    #         "is_attributed": final_model.predict_proba(
+    #             X=df_kaggle_test[features]
+    #         ),
+    #     }
+    # )
+
+    # submission.to_csv("submission.csv", index=False)
 
     return 1
